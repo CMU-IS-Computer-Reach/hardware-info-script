@@ -47,7 +47,7 @@ class EquipmentInfo():
                 shell = True,
                 text = True)
         except subprocess.CalledProcessError as e:
-            self.errors["screen size"] = e.output
+            self.errors["screen size"] = e.output if e.output else "`grep` didn't find match"
         else:
             try:
                 r = re.match(r"(\d*)x(\d*)", output)
@@ -61,10 +61,10 @@ class EquipmentInfo():
                 shell = True,
                 text = True)
         except subprocess.CalledProcessError as e:
-            self.errors["battery health"] = e.output
+            self.errors["battery health"] = e.output if e.output else "`grep` didn't find match"
         else:
             try:
-                r = re.match(r"(\d\.*)%", output)
+                r = re.match(r"([\d\.]*)%", output)
                 self.battery_health = float(r.group(1))
             except Exception as e:
                 self.errors["battery health"] = str(e)
@@ -77,7 +77,7 @@ class EquipmentInfo():
             print(f"-{field}: {err}")
 
     def __str__(self):
-        return ("model name: %s\nRAM(GB): %s\nscreen size(pixels): %sx%s\nbattery health: %s\%" % (
+        return ("model name: %s\nRAM(GB): %s\nscreen size(pixels): %sx%s\nbattery health: %s%%" % (
                     self.model_name, 
                     self.RAM, 
                     self.screen_size[0],
