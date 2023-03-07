@@ -5,6 +5,7 @@ class EquipmentInfo():
     def __init__(self):               # description                     # type
         self.model_name = ""          # CPU model                         string
         self.RAM = -1                 # RAM size (GB)                     int
+        self.storage = -1             # Storage size (GB)                 int
         self.screen_size = (-1, -1)   # Screen size (pixels)              (int, int)
         self.battery_health = -1      # Battery health (%)                float
         self.errors = dict()          # field -> errors during parsing    str -> str
@@ -40,6 +41,21 @@ class EquipmentInfo():
                 self.RAM = int(r.group(1))
             except Exception as e:
                 self.errors["RAM"] = str(e)
+        
+        # Storage size (GB) # TODO: -H (1000 based) or -BG (1024 based)? system monitor is 1000 based
+        try:
+            output = subprocess.check_output("df -x tmpfs --total -BG | grep 'total' | awk '{print $2}'",
+                shell = True,
+                text = True,
+                stderr = subprocess.STDOUT)
+        except subprocess.CalledProcessError as e:
+            self.errors["storage"] = e.output if e.output else "`grep` didn't find match"
+        else:
+            try:
+                r = re.match(r"(\d*)G", output)
+                self.storage = int(r.group(1))
+            except Exception as e:
+                self.errors["storage"] = str(e)
 
         # Screen size (pixels)
         try:
@@ -77,9 +93,10 @@ class EquipmentInfo():
             print(f"-{field}: {err}")
 
     def __str__(self):
-        return ("model name: %s\nRAM(GB): %s\nscreen size(pixels): %sx%s\nbattery health: %s%%" % (
+        return ("model name: %s\nRAM(GB): %s\nstorage(GB):%s\nscreen size(pixels): %sx%s\nbattery health: %s%%" % (
                     self.model_name, 
                     self.RAM, 
+                    self.storage,
                     self.screen_size[0],
                     self.screen_size[1],
                     self.battery_health))    
