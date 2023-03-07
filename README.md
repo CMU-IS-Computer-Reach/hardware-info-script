@@ -5,7 +5,9 @@ A script to get hardware info and upload to Salesforce. Only Linux is supported 
 The script collects the following fields:
 - CPU model name
 - RAM size (in GB)
+- Storage size (in GB)
 - Screen size (width * height in pixels)
+- Battery health (%)
 - TODO: others to be added
 It then prints out all the fields as well as any errors occured when parsing a field.
 
