@@ -13,6 +13,6 @@ It then prints out all the fields as well as any errors occured when parsing a f
 
 # How to run it
 - Make sure Python3 is installed: `python3 --version`
-- Run `python3 <path to file>`
+- Run `python3 <path to script.py>`
 
 
