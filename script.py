@@ -1,35 +1,84 @@
 import re
 import subprocess
 import argparse
-
-# configurations
-FINAL_OS_OPTIONS = ["20.04_Xubuntu_Linux", "Win 10", "Chrome OS"] # Salesforce API Name of all final OS options
-VIDEO_PORT_OPTIONS = ["VGA", "DVI", "HDMI", "Mini-HDMI", "Display Port", "Mini-Display"] # Salesforce API Name of all video ports options
+from simple_salesforce import Salesforce
 
 description = """
 A script that collects and parses hardware details and upload them to Salesforce.
 
-Following fields are collected:
-TODO!!!
+Following fields are asked to be manually input:
+- CRID
+- Webcam
+- Video ports
+- # USB ports
+- Adapter watts
+- Final OS
+
+Following fields are automatically collected:
+- CPU model
+- RAM
+- Storage
+- Screen size
+- Battery health
+- Ethernet
+- Wifi
+- Optical drive
+- Touchscreen
 """
 
-# Linux commands ran for each field
-LINUX_COMMANDS = {
-    "model_name":       ["cat /proc/cpuinfo", "grep 'model name'"],
-    "RAM":              ["cat /proc/meminfo", "numfmt --field 2 --from-unit=Ki --to-unit=Gi", "sed 's/ kB/G/g'", "grep 'MemTotal'", "awk '{print $2}'"],
-    "storage":          ["df -x tmpfs --total -BG", "grep 'total'", "awk '{print $2}'"],
-    "screen_size":      ["xrandr --current", "grep ' connected'"],
-    "battery_health":   ["upower -i `upower -e | grep 'BAT'`", "grep 'capacity'", "awk '{print $2}'", "grep ."],
-    "has_ethernet":     ["lspci", "grep 'ethernet' -i"],
-    "has_wifi":         ["lspci", "grep 'network|wireless' -i -E"],
-    "has_optical_drive":["dmesg", "grep 'cdrom|cd-rom|dvd' -i -E"],
-    "has_touchscreen":  ["xinput list", "grep 'touchscreen' -i"],
+# Salesforce API name for all the fields to be uploaded
+ALL_FIELDS_API_NAMES = {
+    "CRID":                 "Computer_Reach_ID__c",
+    "has_webcam":           "Webcam_present__c",
+    "video_ports":          "Video__c",
+    "num_usb_ports":        "USB__c",
+    "adapter_watts":        "Adapter_Watts__c",
+    "final_os":             "Final_Operating_System__c",
+    "serial_number":        "Serial_Number__c",
+    "model_name":           "Processor_Speed__c",
+    "RAM":                  "RAM_Total_MB__c", # TODO: the API name says MB but the field name says GB
+    "storage":              "Hard_Drive_GB__c",
+    "screen_size":          "Screen_Size__c",
+    "battery_health":       "Battery_Health__c",
+    "has_ethernet":         "Ethernet_present__c",
+    "has_wifi":             "WiFi_present__c",
+    "has_optical_drive":    "Optical_Drive_present__c",
+    "has_touchscreen":      "TouchScreen_Works__c",
 }
 
+# Fields that are asked to be manually input
+MANUAL_FIELDS = ["CRID", "has_webcam", "video_ports", "num_usb_ports", "adapter_watts", "final_os"]
+# Configurations for some manual fields for convenience
+FINAL_OS_OPTIONS = ["20.04_Xubuntu_Linux", "Win 10", "Chrome OS"] # Salesforce API Name of all final OS options
+VIDEO_PORT_OPTIONS = ["VGA", "DVI", "HDMI", "Mini-HDMI", "Display Port", "Mini-Display"] # Salesforce API Name of all video ports options
+
+# Fields that will be automatically collected
+AUTO_FIELDS = ["serial_number", "model_name", "RAM", "storage", "screen_size", "battery_health", "has_ethernet", "has_wifi", "has_optical_drive", "has_touchscreen"]
+# Linux commands used to automatically collect a field
+AUTO_FIELDS_LINUX_COMMANDS = {
+    "model_name":           ["cat /proc/cpuinfo", "grep 'model name'"],
+    "RAM":                  ["cat /proc/meminfo", "numfmt --field 2 --from-unit=Ki --to-unit=Gi", "sed 's/ kB/G/g'", "grep 'MemTotal'", "awk '{print $2}'"],
+    "storage":              ["df -x tmpfs --total -BG", "grep 'total'", "awk '{print $2}'"],
+    "screen_size":          ["xrandr --current", "grep ' connected'"],
+    "battery_health":       ["upower -i `upower -e | grep 'BAT'`", "grep 'capacity'", "awk '{print $2}'", "grep ."],
+    "has_ethernet":         ["lspci", "grep 'ethernet' -i"],
+    "has_wifi":             ["lspci", "grep 'network|wireless' -i -E"],
+    "has_optical_drive":    ["dmesg", "grep 'cdrom|cd-rom|dvd' -i -E"],
+    "has_touchscreen":      ["xinput list", "grep 'touchscreen' -i"],
+}
 
 
 class EquipmentInfo():
     def __init__(self):                  # description                     # type
+        # manually entered fields
+        self.CRID = None                 # CRID                              str
+        self.has_webcam = None           # Webcam (exists or not)            bool
+        self.video_ports = None          # Video ports                       list(str)
+        self.num_usb_ports = None        # Number of USB ports               int
+        self.adapter_watts = None        # Adapter Watts                     str
+        self.final_os = None             # final OS                          str
+        
+        # automatically collected fields
         self.serial_number = None        # Serial number                     str
         self.model_name = None           # CPU model                         str
         self.RAM = None                  # RAM size (GB)                     int
@@ -41,23 +90,24 @@ class EquipmentInfo():
         self.has_optical_drive = None    # Optical drive (exists or not)     bool
         self.has_touchscreen = None      # Touchscreen (exists or not)       bool
 
-        self.CRID = None                 # CRID                              str
-        self.has_webcam = None           # Webcam (exists or not)            bool
-        self.video_ports = None          # Video ports                       set(str)
-        self.num_usb_ports = None        # Number of USB ports               int
-        self.adapter_watts = None        # Adapter Watts                     str
-        self.final_os = None             # final OS                          str
-
         self._errors = dict()             # field -> errors during parsing    str -> str
 
-        # command line arguments
-        # parser = argparse.ArgumentParser(description = description)
-        # parser.add_argument("-os", "--final-os", help = f"Specify final OS (default to {DEFAULT_FINAL_OS})", default = DEFAULT_FINAL_OS)
-        # self._args = parser.parse_args()
+        # Salesforce authentication
+        self.sf = Salesforce(
+            
+            # client_id='Hardware Info Script',
+            domain='test', # TODO: testing on Sandbox,
+        )
+        self.sf.Equipment.get('003e0000003GuNXAA0')
 
-        self.data_input()
-        self.data_collection()
-        self.data_upload()
+        # command line arguments
+        parser = argparse.ArgumentParser(description = description)
+        parser.add_argument("-t", "--test", action='store_true', help="test the script on Salesforce Sandbox")
+        self._args = parser.parse_args()
+
+        # self.data_input()
+        # self.data_collection()
+        # self.data_upload()
 
     def data_input(self):
         print()
@@ -66,7 +116,9 @@ class EquipmentInfo():
         cnt = len(VIDEO_PORT_OPTIONS) + 5
         i = 1
         
-        self.CRID = input(f" ({i:02d}/{cnt}) Enter CRID: ")
+        cr = input(f" ({i:02d}/{cnt}) Enter CRID: ")
+        if cr:
+            self.CRID = cr
         i += 1
         
         while True:
@@ -87,9 +139,13 @@ class EquipmentInfo():
             while True:
                 p = input(f" ({i:02d}/{cnt}) {port} port presents? [y/n]: ").lower()
                 if p == "y":
-                    self.video_ports.add(port)
+                    if not self.video_ports:
+                        self.video_ports = []
+                    self.video_ports.append(port)
                     break
                 elif p == "n":
+                    if not self.video_ports:
+                        self.video_ports = []
                     break
                 elif p == "":
                     break
@@ -108,7 +164,9 @@ class EquipmentInfo():
                 print("\033[91m  Please enter a valid integer, or ENTER to skip\033[00m")
         i += 1
 
-        self.adapter_watts = input(f" ({i:02d}/{cnt}) Enter adpater watts:")
+        watts = input(f" ({i:02d}/{cnt}) Enter adpater watts: ")
+        if watts:
+            self.adapter_watts = watts
         i += 1
 
         while True:
@@ -133,7 +191,7 @@ class EquipmentInfo():
 
         # CPU model
         try:
-            output = subprocess.check_output((" | ").join(LINUX_COMMANDS["model_name"]), 
+            output = subprocess.check_output((" | ").join(AUTO_FIELDS_LINUX_COMMANDS["model_name"]), 
                 shell = True,
                 text = True,
                 stderr = subprocess.STDOUT)
@@ -143,12 +201,12 @@ class EquipmentInfo():
             try:
                 r = re.match(r"\s*model name\s*:\s*(.*)", output)
                 self.model_name = r.group(1)
-            except Expection as e:
+            except Exception as e:
                 self._errors["model name"] = "regex matching error (unexpected /proc/cpuinfo file format)"
 
         # RAM size (GB)
         try:
-            output = subprocess.check_output((" | ").join(LINUX_COMMANDS["RAM"]),
+            output = subprocess.check_output((" | ").join(AUTO_FIELDS_LINUX_COMMANDS["RAM"]),
                 shell = True,
                 text = True,
                 stderr = subprocess.STDOUT)
@@ -164,7 +222,7 @@ class EquipmentInfo():
         # Storage size (GB) 
         # NOTE: -BG means converting size to GB in powers of 1024; change to -H if powers of 1000 is desired instead
         try:
-            output = subprocess.check_output((" | ").join(LINUX_COMMANDS["storage"]),
+            output = subprocess.check_output((" | ").join(AUTO_FIELDS_LINUX_COMMANDS["storage"]),
                 shell = True,
                 text = True,
                 stderr = subprocess.STDOUT)
@@ -179,7 +237,7 @@ class EquipmentInfo():
 
         # Screen size (inch)
         try:
-            output = subprocess.check_output((" | ").join(LINUX_COMMANDS["screen_size"]),
+            output = subprocess.check_output((" | ").join(AUTO_FIELDS_LINUX_COMMANDS["screen_size"]),
                 shell = True,
                 text = True)
         except subprocess.CalledProcessError as e:
@@ -197,7 +255,7 @@ class EquipmentInfo():
                 
         # Battery health (%)
         try:
-            output = subprocess.check_output((" | ").join(LINUX_COMMANDS["battery_health"]),
+            output = subprocess.check_output((" | ").join(AUTO_FIELDS_LINUX_COMMANDS["battery_health"]),
                 shell = True,
                 text = True)
         except subprocess.CalledProcessError as e:
@@ -211,7 +269,7 @@ class EquipmentInfo():
         
         # Ethernet
         try:
-            output = subprocess.check_output((" | ").join(LINUX_COMMANDS["has_ethernet"]),
+            output = subprocess.check_output((" | ").join(AUTO_FIELDS_LINUX_COMMANDS["has_ethernet"]),
                 shell = True,
                 text = True)
         except subprocess.CalledProcessError as e:
@@ -221,7 +279,7 @@ class EquipmentInfo():
 
         # WiFi
         try:
-            output = subprocess.check_output((" | ").join(LINUX_COMMANDS["has_wifi"]),
+            output = subprocess.check_output((" | ").join(AUTO_FIELDS_LINUX_COMMANDS["has_wifi"]),
                 shell = True,
                 text = True)
         except subprocess.CalledProcessError as e:
@@ -231,7 +289,7 @@ class EquipmentInfo():
 
         # Optical drive
         try:
-            output = subprocess.check_output((" | ").join(LINUX_COMMANDS["has_optical_drive"]),
+            output = subprocess.check_output((" | ").join(AUTO_FIELDS_LINUX_COMMANDS["has_optical_drive"]),
                 shell = True,
                 text = True)
         except subprocess.CalledProcessError as e:
@@ -241,7 +299,7 @@ class EquipmentInfo():
 
         # Touchscreen
         try:
-            output = subprocess.check_output((" | ").join(LINUX_COMMANDS["has_touchscreen"]),
+            output = subprocess.check_output((" | ").join(AUTO_FIELDS_LINUX_COMMANDS["has_touchscreen"]),
                 shell = True,
                 text = True)
         except subprocess.CalledProcessError as e:
@@ -255,12 +313,12 @@ class EquipmentInfo():
         print("\033[104m***Data Upload Section***\033[00m")
         print("\033[93m!!!Please carefully review the data to be uploaded first!!!\033[00m")
         self._display_info()
-        print("\033[93mAny fields not shown above will be empty; update them in Salesforce manually if necessary.\033[00m")
         while True:
             print()
-            res = input(f"\033[43mUpload to Salesforce? [y/n]: \033[00m").lower()
+            res = input(f"\033[44mUpload to Salesforce? [y/n]: \033[00m").lower()
             if res == "y":
-                # TODO
+                record = self._convert_to_record()
+                # sf.Equipment.create(record)
                 print("\033[92mData uploaded successfully!\033[00m")
                 break
             elif res == "n":
@@ -283,74 +341,34 @@ class EquipmentInfo():
         
     def _display_info(self):
         print("\033[92m Below fields are input manually:\033[00m")
-        if self.CRID:
-            print(f" - CRID:               {self.CRID}")
-        if self.has_webcam != None:
-            print(f" - has webcam?:        {self.has_webcam}")
-        if self.video_ports:
-            print(f" - video ports:        {self.video_ports}")
-        if self.num_usb_ports != None:
-            print(f" - # USB ports:        {self.num_usb_ports}")
-        if self.adapter_watts:
-            print(f" - adapater watts:     {self.adapter_watts}")
-        if self.final_os:
-            print(f" - final OS:           {self.final_os}")
-
+        for field in MANUAL_FIELDS:
+            var = getattr(self, field)
+            if var != None:
+                print(f" - {field:<20}: {var}")
+            
         print("\033[92m Below fields are successfully collected:\033[00m")
-        if self.serial_number:
-            print(f" - serial number:      {self.serial_number}")
-        if self.model_name:
-            print(f" - model name:         {self.model_name}")
-        if self.RAM:
-            print(f" - RAM (GB):           {self.RAM}")
-        if self.storage:
-            print(f" - storage (GB):       {self.storage}")
-        if self.screen_size:
-            print(f" - screen size (inch): {self.screen_size}")
-        if self.battery_health:
-            print(f" - battery health (%): {self.battery_health}")
-        if self.has_ethernet != None:
-            print(f" - has ethernet?:      {self.has_ethernet}")
-        if self.has_wifi != None:
-            print(f" - has wifi?:          {self.has_wifi}")
-        if self.has_optical_drive != None:
-            print(f" - has optical drive?: {self.has_optical_drive}")
-        if self.has_touchscreen != None:
-            print(f" - has touchscreen?:   {self.has_touchscreen}")
+        for field in AUTO_FIELDS:
+            var = getattr(self, field)
+            if var != None:
+                print(f" - {field:<20}: {var}")
+        
+        print("\033[93m Below fields are not collected and will be empty: (update them in Salesforce manually if necessary)\033[00m")
+        for field in ALL_FIELDS_API_NAMES:
+            if getattr(self, field) == None:
+                print(f" - {field}")
 
-        print("\033[92m Below fields are not collected and will be empty:\033[00m")
-        if self.CRID == None:
-            print(f" - CRID")
-        if self.has_webcam == None:
-            print(f" - has webcam?")
-        if self.video_ports == None:
-            print(f" - video ports")
-        if self.num_usb_ports == None:
-            print(f" - # USB ports")
-        if self.adapter_watts == None:
-            print(f" - adapater watts")
-        if self.final_os == None:
-            print(f" - final OS")
-        if self.serial_number == None:
-            print(f" - serial number")
-        if self.model_name == None:
-            print(f" - model name")
-        if self.RAM == None:
-            print(f" - RAM (GB)")
-        if self.storage == None:
-            print(f" - storage (GB)")
-        if self.screen_size == None:
-            print(f" - screen size (inch)")
-        if self.battery_health == None:
-            print(f" - battery health (%)")
-        if self.has_ethernet == None:
-            print(f" - has ethernet?")
-        if self.has_wifi == None:
-            print(f" - has wifi?")
-        if self.has_optical_drive == None:
-            print(f" - has optical drive?")
-        if self.has_touchscreen == None:
-            print(f" - has touchscreen?")
+    def _convert_to_record(self):
+        record = dict()
+        
+        for field in ALL_FIELDS_API_NAMES:
+            var = getattr(self, field)
+            if var != None:
+                if field == "video_ports": # this is a picklist (multi-select) field in Salesforce, so data should be in the format of "selection1;selection;..."
+                    var = ";".join(var)
+                record[ALL_FIELDS_API_NAMES[field]] = var
+        
+        for k, v in record.items():
+            print(f" {k:<25}: {v}")
 
 def main():
     info = EquipmentInfo()
