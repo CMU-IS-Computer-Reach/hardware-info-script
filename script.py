@@ -1,3 +1,5 @@
+import os
+import sys
 import re
 import subprocess
 import argparse
@@ -90,24 +92,26 @@ class EquipmentInfo():
         self.has_optical_drive = None    # Optical drive (exists or not)     bool
         self.has_touchscreen = None      # Touchscreen (exists or not)       bool
 
-        self._errors = dict()             # field -> errors during parsing    str -> str
+        self._errors = dict()            # field -> errors during parsing    str -> str
+        self.eid = None                  # Salesforce id
 
         # Salesforce authentication
         self.sf = Salesforce(
-            
-            # client_id='Hardware Info Script',
+            username = os.getenv("SF_BENCH_USERNAME"), 
+            password = os.getenv("SF_BENCH_PASSWORD"), 
+            security_token = os.getenv("SF_BENCH_TOKEN"),
+            client_id='Hardware Info Script',
             domain='test', # TODO: testing on Sandbox,
         )
-        self.sf.Equipment.get('003e0000003GuNXAA0')
 
         # command line arguments
         parser = argparse.ArgumentParser(description = description)
         parser.add_argument("-t", "--test", action='store_true', help="test the script on Salesforce Sandbox")
         self._args = parser.parse_args()
 
-        # self.data_input()
-        # self.data_collection()
-        # self.data_upload()
+        self.data_input()
+        self.data_collection()
+        self.data_upload()
 
     def data_input(self):
         print()
@@ -115,10 +119,19 @@ class EquipmentInfo():
         print("\033[93mAfter each prompt, enter value and press ENTER, or directly press ENTER to skip\033[00m")
         cnt = len(VIDEO_PORT_OPTIONS) + 5
         i = 1
-        
-        cr = input(f" ({i:02d}/{cnt}) Enter CRID: ")
-        if cr:
-            self.CRID = cr
+
+        while True:
+            cr = input(f" ({i:02d}/{cnt}) [REQUIRED] Enter CRID: ")
+            if not cr:
+                print("\033[91m  CRID is required\033[00m")
+            else:
+                try:
+                    self.eid = self.sf.Equipment__c.get_by_custom_id(ALL_FIELDS_API_NAMES["CRID"], cr)['Id']
+                    self.CRID = cr
+                    break
+                except:
+                    print(f"\033[91m  There is no record with CRID {self.CRID} in Salesforce, please double check and reenter\033[00m")
+                    print("\033[93m  (if you are trying to create a new equipment record, please add it from Salesforce UI first)\033[00m")
         i += 1
         
         while True:
@@ -313,22 +326,29 @@ class EquipmentInfo():
         print("\033[104m***Data Upload Section***\033[00m")
         print("\033[93m!!!Please carefully review the data to be uploaded first!!!\033[00m")
         self._display_info()
+        print()
         while True:
-            print()
             res = input(f"\033[44mUpload to Salesforce? [y/n]: \033[00m").lower()
             if res == "y":
                 record = self._convert_to_record()
-                # sf.Equipment.create(record)
-                print("\033[92mData uploaded successfully!\033[00m")
-                break
+                try:
+                    self.sf.Equipment__c.update(self.eid, record)
+                    print("\033[92mData uploaded successfully! See below for details:\033[00m")
+                    print(f" ***CRID: {self.CRID}***")
+                    print(f" Fields updated:")
+                    for k, v in record.items():
+                        if k != ALL_FIELDS_API_NAMES["CRID"]:
+                            print(f"  {k:<25}: {v}")
+                except:
+                    print(f"\033[91mUnexpected error, likely that the record with CRID {self.CRID} is recently deleted from Salesforce\033[00m")
+                    print("\033[90mData not uploaded.\033[00m")
+                finally:
+                    break
             elif res == "n":
                 print("\033[90mData not uploaded.\033[00m")
                 break
-            elif res == "":
-                print("\033[90mData not uploaded.\033[00m")
-                break
             else:
-                print("\033[91m  Please enter a valid option [y/n], or ENTER to skip\033[00m")
+                print("\033[91m  Please enter a valid option [y/n]\033[00m")
 
     def _display_errors(self):
         if len(self._errors):
@@ -366,11 +386,23 @@ class EquipmentInfo():
                 if field == "video_ports": # this is a picklist (multi-select) field in Salesforce, so data should be in the format of "selection1;selection;..."
                     var = ";".join(var)
                 record[ALL_FIELDS_API_NAMES[field]] = var
-        
-        for k, v in record.items():
-            print(f" {k:<25}: {v}")
+
+        return record
 
 def main():
+    valid = True
+    if not os.getenv("SF_BENCH_USERNAME"):
+        print(f"\033[91mPlease make sure environment variable SF_BENCH_USERNAME is set\033[00m")
+        valid = False
+    if not os.getenv("SF_BENCH_PASSWORD"):
+        print(f"\033[91mPlease make sure environment variable SF_BENCH_PASSWORD is set\033[00m")
+        valid = False
+    if not os.getenv("SF_BENCH_TOKEN"):
+        print(f"\033[91mPlease make sure environment variable SF_BENCH_TOKEN is set\033[00m")
+        valid = False
+    if not valid:
+        sys.exit(1)
+
     info = EquipmentInfo()
 
 if __name__ == "__main__":
