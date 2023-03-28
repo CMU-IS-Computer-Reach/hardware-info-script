@@ -257,7 +257,7 @@ class EquipmentInfo():
             self._errors["screen size"] = e.output if e.output else "`grep` didn't find match (`xrandr` cannot find current display device)"
         else:
             try:
-                output = "eDP-1 connected primary 3424x1926+0+0 (normal left inverted right x axis y axis) 310mm x 174mm"
+                # output = "eDP-1 connected primary 3424x1926+0+0 (normal left inverted right x axis y axis) 310mm x 174mm"
                 r = re.match(r".*\s+(\d+)mm\s+x\s+(\d+)mm", output)
                 w = int(r.group(1))
                 h = int(r.group(2))
