@@ -95,19 +95,27 @@ class EquipmentInfo():
         self._errors = dict()            # field -> errors during parsing    str -> str
         self.eid = None                  # Salesforce id
 
-        # Salesforce authentication
-        self.sf = Salesforce(
-            username = os.getenv("SF_BENCH_USERNAME"), 
-            password = os.getenv("SF_BENCH_PASSWORD"), 
-            security_token = os.getenv("SF_BENCH_TOKEN"),
-            client_id='Hardware Info Script',
-            domain='test', # TODO: testing on Sandbox,
-        )
-
         # command line arguments
         parser = argparse.ArgumentParser(description = description)
         parser.add_argument("-t", "--test", action='store_true', help="test the script on Salesforce Sandbox")
         self._args = parser.parse_args()
+
+        # Salesforce authentication
+        if self._args.test:
+            self.sf = Salesforce(
+                username = os.getenv("SF_BENCH_USERNAME"), 
+                password = os.getenv("SF_BENCH_PASSWORD"), 
+                security_token = os.getenv("SF_BENCH_TOKEN"),
+                client_id='Hardware Info Script (test)',
+                domain='test',
+            )
+        else:
+            self.sf = Salesforce(
+                username = os.getenv("SF_BENCH_USERNAME"), 
+                password = os.getenv("SF_BENCH_PASSWORD"), 
+                security_token = os.getenv("SF_BENCH_TOKEN"),
+                client_id='Hardware Info Script',
+            )
 
         self.data_input()
         self.data_collection()
