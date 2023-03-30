@@ -4,7 +4,7 @@ A script to get hardware info and upload to Salesforce. Only Linux is supported 
 ## usage
 1. Make sure Python3 is installed: `python3 --version`
 2. Make sure the dependencies is installed (**this only needs to be run once**): `pip install -r requirements.txt`
-3. Make sure the following **environment variables** are set/up-to-date (`export NAME=VALUE`):
+3. Make sure the following **environment variables** are set/up-to-date (add `export NAME=VALUE` to your `~/.bashrc` file, and then run `source .bashrc`, and then restart terminal):
     1. `SF_BENCH_USERNAME`: Salesforce username of the account used for auditing devices
     2. `SF_BENCH_PASSWORD`: password
     3. `SF_BENCH_TOKEN`: security token ([how to find it](https://help.salesforce.com/s/articleView?id=sf.user_security_token.htm&type=5))

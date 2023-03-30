@@ -51,7 +51,7 @@ ALL_FIELDS_API_NAMES = {
 # Fields that are asked to be manually input
 MANUAL_FIELDS = ["CRID", "has_webcam", "video_ports", "num_usb_ports", "adapter_watts", "final_os"]
 # Configurations for some manual fields for convenience
-FINAL_OS_OPTIONS = ["20.04_Xubuntu_Linux", "Win 10", "Chrome OS"] # Salesforce API Name of all final OS options
+FINAL_OS_OPTIONS = ["20.04_Xubuntu_Linux"] # Salesforce API Name of all final OS options
 VIDEO_PORT_OPTIONS = ["VGA", "DVI", "HDMI", "Mini-HDMI", "Display Port", "Mini-Display"] # Salesforce API Name of all video ports options
 
 # Fields that will be automatically collected
@@ -60,7 +60,7 @@ AUTO_FIELDS = ["serial_number", "model_name", "RAM", "storage", "screen_size", "
 AUTO_FIELDS_LINUX_COMMANDS = {
     "model_name":           ["cat /proc/cpuinfo", "grep 'model name'"],
     "RAM":                  ["cat /proc/meminfo", "numfmt --field 2 --from-unit=Ki --to-unit=Gi", "sed 's/ kB/G/g'", "grep 'MemTotal'", "awk '{print $2}'"],
-    "storage":              ["df -x tmpfs --total -BG", "grep 'total'", "awk '{print $2}'"],
+    "storage":              ["lsblk -I 8 -d -n --output SIZE"],
     "screen_size":          ["xrandr --current", "grep ' connected'"],
     "battery_health":       ["upower -i `upower -e | grep 'BAT'`", "grep 'capacity'", "awk '{print $2}'", "grep ."],
     "has_ethernet":         ["lspci", "grep 'ethernet' -i"],
@@ -86,7 +86,7 @@ class EquipmentInfo():
         self.RAM = None                  # RAM size (GB)                     int
         self.storage = None              # Storage size (GB)                 int
         self.screen_size = None          # Screen size (inch)                int
-        self.battery_health = None       # Battery health (%)                float
+        self.battery_health = None       # Battery health (%)                str (a float followed by %)
         self.has_ethernet = None         # Ethernet adapter (exists or not)  bool
         self.has_wifi = None             # Wifi card (exists or not)         bool
         self.has_optical_drive = None    # Optical drive (exists or not)     bool
@@ -232,8 +232,7 @@ class EquipmentInfo():
             except Exception as e:
                 self._errors["RAM"] = "regex matching error (unexpected /proc/meminfo file format)"
         
-        # Storage size (GB) 
-        # NOTE: -BG means converting size to GB in powers of 1024; change to -H if powers of 1000 is desired instead
+        # Storage size (GB), converted in powers of 1024
         try:
             output = subprocess.check_output((" | ").join(AUTO_FIELDS_LINUX_COMMANDS["storage"]),
                 shell = True,
@@ -243,7 +242,7 @@ class EquipmentInfo():
             self._errors["storage"] = e.output if e.output else "`grep` didn't find match (unexpected output format from `df`)"
         else:
             try:
-                r = re.match(r"(\d+)G", output)
+                r = re.match(r"\s*(\d+)G", output)
                 self.storage = int(r.group(1))
             except Exception as e:
                 self._errors["storage"] = "regex matching error (unexpected output format from `df`)"
@@ -257,7 +256,6 @@ class EquipmentInfo():
             self._errors["screen size"] = e.output if e.output else "`grep` didn't find match (`xrandr` cannot find current display device)"
         else:
             try:
-                # output = "eDP-1 connected primary 3424x1926+0+0 (normal left inverted right x axis y axis) 310mm x 174mm"
                 r = re.match(r".*\s+(\d+)mm\s+x\s+(\d+)mm", output)
                 w = int(r.group(1))
                 h = int(r.group(2))
@@ -276,7 +274,7 @@ class EquipmentInfo():
         else:
             try:
                 r = re.match(r"([\d\.]*)%", output)
-                self.battery_health = float(r.group(1))
+                self.battery_health = str(round(float(r.group(1)), 2)) + "%"
             except Exception as e:
                 self._errors["battery health"] = "regex matching error (unexpected output format from `upower`)"
         
