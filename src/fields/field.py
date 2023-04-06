@@ -1,4 +1,4 @@
-from fields.config import ALL_FIELDS_API_NAMES, AUTO_FIELDS_LINUX_COMMANDS
+from src.fields.config import ALL_FIELDS_API_NAMES, AUTO_FIELDS_LINUX_COMMANDS
 import subprocess
 
 class Field:

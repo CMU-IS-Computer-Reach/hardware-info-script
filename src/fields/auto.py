@@ -1,5 +1,5 @@
-from fields.field import AutoField
-from fields.config import VIDEO_PORT_OPTIONS, FINAL_OS_OPTIONS, ALL_FIELDS_API_NAMES
+from src.fields.field import AutoField
+from src.fields.config import VIDEO_PORT_OPTIONS, FINAL_OS_OPTIONS, ALL_FIELDS_API_NAMES
 import re
 
 model_name = AutoField(

@@ -1,7 +1,6 @@
-from fields.manual import manual_fields
-from fields.auto import auto_fields
-from fields.config import ALL_FIELDS_API_NAMES
-import argparse
+from src.fields.manual import manual_fields
+from src.fields.auto import auto_fields
+from src.fields.config import ALL_FIELDS_API_NAMES
 from simple_salesforce import Salesforce
 import os
 
@@ -160,19 +159,9 @@ def review_and_upload(sf, is_test):
         else:
             print("\033[91m  Please enter a valid option [y/n]\033[00m")
 
-def main():
-    # command line arguments
-    parser = argparse.ArgumentParser(description = "A script that collects and parses hardware details and upload them to Salesforce.")
-    parser.add_argument("-t", "--test", action='store_true', help="test the script on Salesforce Sandbox")
-    parser.add_argument("-c", "--cml", action='store_true', help="run the command line version (without GUI)")
-    args = parser.parse_args()
+def run(is_test):
+    sf = authenticate(is_test)
 
-    sf = authenticate(args.test)
-
-    manual_input(sf, args.test)
-    auto_collection(sf, args.test)
-    review_and_upload(sf, args.test)
-
-
-if __name__ == "__main__":
-    main()
+    manual_input(sf, is_test)
+    auto_collection(sf, is_test)
+    review_and_upload(sf, is_test)

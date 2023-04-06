@@ -1,5 +1,5 @@
-from fields.field import ManualField
-from fields.config import VIDEO_PORT_OPTIONS, FINAL_OS_OPTIONS, ALL_FIELDS_API_NAMES
+from src.fields.field import ManualField
+from src.fields.config import VIDEO_PORT_OPTIONS, FINAL_OS_OPTIONS, ALL_FIELDS_API_NAMES
 
 CRID = ManualField(
     "CRID", 
