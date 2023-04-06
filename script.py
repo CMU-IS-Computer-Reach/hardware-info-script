@@ -63,10 +63,10 @@ AUTO_FIELDS_LINUX_COMMANDS = {
     "storage":              ["lsblk -I 8 -d -n --output SIZE"],
     "screen_size":          ["xrandr --current", "grep ' connected'"],
     "battery_health":       ["upower -i `upower -e | grep 'BAT'`", "grep 'capacity'", "awk '{print $2}'", "grep ."],
-    "has_ethernet":         ["lspci", "grep 'ethernet' -i"],
-    "has_wifi":             ["lspci", "grep 'network|wireless' -i -E"],
-    "has_optical_drive":    ["dmesg", "grep 'cdrom|cd-rom|dvd' -i -E"],
-    "has_touchscreen":      ["xinput list", "grep 'touchscreen' -i"],
+    "has_ethernet":         ["lspci", "grep 'ethernet' -i", "grep ."],
+    "has_wifi":             ["lspci", "grep 'network|wireless' -i -E", "grep ."],
+    "has_optical_drive":    ["dmesg", "grep 'cdrom|cd-rom|dvd' -i -E", "grep ."],
+    "has_touchscreen":      ["xinput list", "grep 'touchscreen' -i", "grep ."],
 }
 
 
@@ -97,7 +97,7 @@ class EquipmentInfo():
         # command line arguments
         parser = argparse.ArgumentParser(description = description)
         parser.add_argument("-t", "--test", action='store_true', help="test the script on Salesforce Sandbox")
-        parser.add_argument("-s", "--script", action='store_true', help="run the script without GUI")
+        parser.add_argument("-c", "--cml", action='store_true', help="run the command line version (without GUI)")
         self._args = parser.parse_args()
 
         # Salesforce authentication
