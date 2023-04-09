@@ -79,20 +79,40 @@ class EquipmentInfo():
         self.num_usb_ports = None        # Number of USB ports               int
         self.adapter_watts = None        # Adapter Watts                     str
         self.final_os = None             # final OS                          str
+        self.storage = None              # Storage size (GB)                 number
         
         # automatically collected fields
         self.model_name = None           # CPU model                         str
         self.RAM = None                  # RAM size (GB)                     int
-        self.storage = None              # Storage size (GB)                 int
         self.screen_size = None          # Screen size (inch)                int
         self.battery_health = None       # Battery health (%)                str (a float followed by %)
-        self.has_ethernet = None         # Ethernet adapter (exists or not)  bool
-        self.has_wifi = None             # Wifi card (exists or not)         bool
-        self.has_optical_drive = None    # Optical drive (exists or not)     bool
-        self.has_touchscreen = None      # Touchscreen (exists or not)       bool
+        self.has_ethernet = False        # Ethernet adapter (exists or not)  bool
+        self.has_wifi = False            # Wifi card (exists or not)         bool
+        self.has_optical_drive = False   # Optical drive (exists or not)     bool
+        self.has_touchscreen = False     # Touchscreen (exists or not)       bool
 
-        self._errors = dict()            # field -> errors during parsing    str -> str
+        self.manual_fields = [
+            self.CRID, 
+            self.has_webcam, 
+            self.video_ports, 
+            self.num_usb_ports, 
+            self.adapter_watts, 
+            self.final_os, 
+            self.storage
+        ]
+        self.auto_fields = [
+            self.model_name,
+            self.RAM,
+            self.screen_size,
+            self.battery_health,
+            self.has_ethernet,
+            self.has_wifi,
+            self.has_optical_drive,
+            self.has_touchscreen
+        ]
+
         self.eid = None                  # Salesforce id
+        self._errors = dict()            # field -> errors during parsing    str -> str
 
         # command line arguments
         parser = argparse.ArgumentParser(description = description)
@@ -263,9 +283,10 @@ class EquipmentInfo():
         print()
         print("\033[104m***Manual Data Entry Section***\033[00m")
         print("\033[93mAfter each prompt, enter value and press ENTER, or directly press ENTER to skip\033[00m")
-        cnt = len(VIDEO_PORT_OPTIONS) + 5
+        cnt = len(self.manual_fields)
         i = 1
 
+        # CRID
         while True:
             cr = input(f" ({i:02d}/{cnt}) [REQUIRED] Enter CRID: ")
             if not cr:
@@ -280,6 +301,7 @@ class EquipmentInfo():
                     print("\033[93m  (if you are trying to create a new equipment record, please add it from Salesforce UI first)\033[00m")
         i += 1
         
+        # Webcam
         while True:
             webcam = input(f" ({i:02d}/{cnt}) Webcam presents? [y/n]: ").lower()
             if webcam == "y":
@@ -292,9 +314,11 @@ class EquipmentInfo():
                 print("\033[91m  Please enter a valid option [y/n], or ENTER to skip\033[00m")
         i += 1
 
+        # Video ports
+        print(f" ({i:02d}/{cnt})  Choose available video ports:")
         for port in VIDEO_PORT_OPTIONS:
             while True:
-                p = input(f" ({i:02d}/{cnt}) {port} port presents? [y/n]: ").lower()
+                p = input(f"  - {port} port presents? [y/n]: ").lower()
                 if p == "y":
                     self.video_ports.append(port)
                     break
@@ -302,24 +326,30 @@ class EquipmentInfo():
                     break
                 else:
                     print("\033[91m  Please enter a valid option [y/n], or ENTER to skip\033[00m")
-            i +=1
+        i += 1
 
+        # Number of USB ports
         while True:
             usb = input(f" ({i:02d}/{cnt}) Enter # USB ports: ")
             if not usb:
                 break
             try:
-                self.num_usb_ports = int(usb)
+                usb = int(usb)
+                if (usb < 0 or usb > 99):
+                    raise ValueError
+                self.num_usb_ports = usb
                 break
             except ValueError:
                 print("\033[91m  Please enter a valid integer, or ENTER to skip\033[00m")
         i += 1
 
+        # Adapter watts
         watts = input(f" ({i:02d}/{cnt}) Enter adpater watts: ")
         if watts:
             self.adapter_watts = watts
         i += 1
 
+        # Final OS
         while True:
             choices = ""
             for j, opt in enumerate(FINAL_OS_OPTIONS):
@@ -328,13 +358,34 @@ class EquipmentInfo():
             if not os:
                 break
             try:
-                if int(os) < 1:
-                    raise ValueError
                 self.final_os = FINAL_OS_OPTIONS[int(os)-1]
                 break
             except:
                 print("\033[91m  Please enter a valid integer option, or ENTER to skip\033[00m")
     
+        # Storage size
+        print(f" ({i:02d}/{cnt}) Enter storage size (GB):")
+        print(" Below are a list of all mounted file systems and their size:")
+        try:
+            output = subprocess.check_output("lsblk -o NAME,SIZE,TYPE,MOUNTPOINT | grep 'name|sda' -i -E",
+                shell = True,
+                text = True,
+                stderr = subprocess.STDOUT)
+        except subprocess.CalledProcessError as e:
+            print(f"\033[91m  (Unexpected error when running Linux command, no available information can be provided at this time)\033[00m")
+        else:
+            print(output)
+            while True:
+                storage = input(f" *total storage size (GB): ")
+                if not storage:
+                    break
+                try:
+                    storage = float(storage)
+                    self.storage = storage
+                    break
+                except ValueError:
+                    print("\033[91m  Please enter a valid number, or ENTER to skip\033[00m")
+
         print()
 
     def data_collection(self):
@@ -370,21 +421,6 @@ class EquipmentInfo():
             except Exception as e:
                 self._errors["RAM"] = "regex matching error (unexpected /proc/meminfo file format)"
         
-        # Storage size (GB), converted in powers of 1024
-        try:
-            output = subprocess.check_output((" | ").join(AUTO_FIELDS_LINUX_COMMANDS["storage"]),
-                shell = True,
-                text = True,
-                stderr = subprocess.STDOUT)
-        except subprocess.CalledProcessError as e:
-            self._errors["storage"] = e.output if e.output else "`grep` didn't find match (unexpected output format from `df`)"
-        else:
-            try:
-                r = re.match(r"\s*(\d+)G", output)
-                self.storage = int(r.group(1))
-            except Exception as e:
-                self._errors["storage"] = "regex matching error (unexpected output format from `df`)"
-
         # Screen size (inch)
         try:
             output = subprocess.check_output((" | ").join(AUTO_FIELDS_LINUX_COMMANDS["screen_size"]),
@@ -457,24 +493,43 @@ class EquipmentInfo():
             self.has_touchscreen = True
 
         self._display_errors()
+
+    def data_review(self):
+        print("\033[104m***Data Review Section***\033[00m")
+        all_fields = self.manual_fields + self.auto_fields
+        for idx, field in enumerate(all_fields):
+            if field != None:
+                print(f" [{idx+1}] {field.__name__:<20}: {field}")
+            else:
+                print(f" - {field.__name__:<20}: (empty)")
+
+        while True:
+            choice = input(f" Enter integet option if you want to modify any field, or Y to proceed to data upload:")
+            if not choice:
+                print("\033[91m  Please enter a valid integer option, or Y to proceed\033[00m")
+            try:
+                field = all_fields[int(os)-1]
+                # TODO
+                break
+            except:
+                print("\033[91m  Please enter a valid integer option, or ENTER to skip\033[00m")
+        
         
     def data_upload(self):
         print("\033[104m***Data Upload Section***\033[00m")
-        print("\033[93m!!!Please carefully review the data to be uploaded first!!!\033[00m")
-        self._display_info()
+        print("\033[93m Below fields will be uploaded to Saleforce, any fields not shown will be empty:\033[00m")
+        for field in self.manual_fields + self.auto_fields:
+            if field != None:
+                print(f"  {field.__name__:<20}: {field}")
         print()
+
         while True:
             res = input(f"\033[44mUpload to Salesforce? [y/n]: \033[00m").lower()
             if res == "y":
                 record = self._convert_to_record()
                 try:
                     self.sf.Equipment__c.update(self.eid, record)
-                    print("\033[92mData uploaded successfully! See below for details:\033[00m")
-                    print(f" ***CRID: {self.CRID}***")
-                    print(f" Fields updated:")
-                    for k, v in record.items():
-                        if k != ALL_FIELDS_API_NAMES["CRID"]:
-                            print(f"  {k:<25}: {v}")
+                    print(f"\033[92mData uploaded successfully! CRID: {self.CRID}\033[00m")
                 except:
                     print(f"\033[91mUnexpected error, likely that record with CRID {self.CRID} is recently deleted from Salesforce\033[00m")
                     print("\033[90mData not uploaded.\033[00m")
@@ -494,24 +549,6 @@ class EquipmentInfo():
         else:
             print("\033[92mNo error occured; all commands returned successfully\033[00m")
         print()
-        
-    def _display_info(self):
-        print("\033[92m Below fields are input manually:\033[00m")
-        for field in MANUAL_FIELDS:
-            var = getattr(self, field)
-            if var != None:
-                print(f" - {field:<20}: {var}")
-            
-        print("\033[92m Below fields are successfully collected:\033[00m")
-        for field in AUTO_FIELDS:
-            var = getattr(self, field)
-            if var != None:
-                print(f" - {field:<20}: {var}")
-        
-        print("\033[93m Below fields are not collected and will be empty: (update them in Salesforce manually if necessary)\033[00m")
-        for field in ALL_FIELDS_API_NAMES:
-            if getattr(self, field) == None:
-                print(f" - {field}")
 
     def _convert_to_record(self):
         record = dict()
