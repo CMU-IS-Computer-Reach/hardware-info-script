@@ -16,11 +16,11 @@ Following fields are asked to be manually input:
 - # USB ports
 - Adapter watts
 - Final OS
+- Storage
 
 Following fields are automatically collected:
 - CPU model
 - RAM
-- Storage
 - Screen size
 - Battery health
 - Ethernet
@@ -125,164 +125,57 @@ class EquipmentInfo():
         self._args = parser.parse_args()
 
         # Salesforce authentication
-        if self._args.test: # use Sandbox connection for test
-            self.sf = Salesforce(
-                username = os.getenv("SF_BENCH_USERNAME"), 
-                password = os.getenv("SF_BENCH_PASSWORD"), 
-                security_token = os.getenv("SF_BENCH_TOKEN"),
-                client_id='Hardware Info Script (test)',
-                domain='test',
-            )
-        else: # production environment
-            self.sf = Salesforce(
-                username = os.getenv("SF_BENCH_USERNAME"), 
-                password = os.getenv("SF_BENCH_PASSWORD"), 
-                security_token = os.getenv("SF_BENCH_TOKEN"),
-                client_id='Hardware Info Script',
-            )
-
-        # run the command line version
-        if self._args.cml:
-            self.data_input()
-            self.data_collection()
-            self.data_review()
-            self.data_upload()
-        else: # run the GUI version
-            self.start_GUI()
-    
-    def start_GUI(self):
-        step = 0
-        font_small = ("Arial", 12)
-        font = ("Arial", 14)
-        font_bold = ("Arial Bold", 14)
-        video_ports = [[sg.pin(sg.Checkbox(port, key=port, font=font_small, visible=False))] for port in VIDEO_PORT_OPTIONS]
-        autos = [[
-            sg.pin(sg.Text(f"{field}:", key=field+"_text", size=(15,1), font=font_bold, visible=False)),
-            sg.pin(sg.Text("", key=field, size=(45,1), font=font_small, visible=False))
-        ] for field in AUTO_FIELDS]
-        autos_failed = [[
-            sg.pin(sg.Text(f"{field}", key=field+"_text_failed", size=(15,1), font=font_bold, visible=False)),
-        ] for field in AUTO_FIELDS]
-        
-        window = sg.Window(title="Hardware Info Script", layout=[
-            [sg.StatusBar("", key="status", size=(30,1), font=font_small, text_color="Yellow")],
-            [sg.Text("CRID: ", key="CRID_text", size=(16,1), font=font_bold), sg.Input(key="CRID", size=(15,1), font=font)],
-
-            [sg.Text("", key="prompt", size=(30,1), text_color="Blue", font=font)],
-            
-            # manual data entry
-            [sg.pin(sg.Text("Webcam exists?:", key="has_webcam_text", size=(15,1), font=font_bold, visible=False)), sg.Checkbox("", key="has_webcam", visible=False)],
-            [sg.pin(sg.Text("# USB ports:", key="num_usb_ports_text", size=(15,1), font=font_bold, visible=False)), sg.Input(key="num_usb_ports", size=(6,1), font=font, visible=False)],
-            [sg.pin(sg.Text("Adapter watts:", key="adapter_watts_text", size=(15,1), font=font_bold, visible=False)), sg.Input(key="adapter_watts", size=(6,1), font=font, visible=False)],
-            [sg.pin(sg.Text("Video ports:", key="video_ports_text", size=(15,1), font=font_bold, visible=False))],
-            video_ports,
-            [sg.pin(sg.Text("Final OS:", key="final_os_text", size=(15,1), font=font_bold, visible=False)),
-             sg.Combo(["(leave as empty)"] + FINAL_OS_OPTIONS, default_value="(leave as empty)", key="final_os", font=font, visible=False)],
-            
-            # automatic data collection
-            [sg.pin(sg.Text("Below fields are successfully collected:", key="prompt_success", size=(45,1), text_color="Green", font=font, visible=False))],
-            autos,
-            [sg.pin(sg.Text("Below fields are not collected and will be empty:", key="prompt_failure", size=(45,1), text_color="Red", font=font, visible=False))],
-            autos_failed,
-
-            [sg.pin(sg.Text("Click NEXT to UPLOAD DATA to Salesforce", key="prompt_next", size=(45,1), text_color="Yellow", font=font, visible=False))],
-            [sg.pin(sg.Text("Uploading data, please wait", key="upload_waiting", size=(45,1), text_color="Yellow", font=font, visible=False))],
-            [sg.pin(sg.Text("Data uploaded successfully!", key="upload_success", size=(45,1), text_color="Green", font=font, visible=False))],
-            [sg.pin(sg.Text("Data upload failed.", key="upload_failure", size=(45,1), text_color="Red", font=font, visible=False))],
-            [sg.Button("NEXT", font=font_small, size=(6,1)), sg.Button("EXIT", font=font_small, size=(6,1))],
-        ], size=(600, 600))
-
-        while True:
-            event, values = window.read()
-            if event in (None, 'EXIT'):
-                break
-            if event == "NEXT" and step == 0:
-                cr = values['CRID']
-                try:
-                    self.eid = self.sf.Equipment__c.get_by_custom_id(ALL_FIELDS_API_NAMES["CRID"], cr)['Id']
-                    self.CRID = cr
-                    window['CRID_text'].update(f"CRID: {self.CRID}")
-                    window['CRID'].update(visible = False)
-
-                    window['prompt'].update("====MANUAL DATA ENTRY====")
-                    window['has_webcam_text'].update(visible = True)
-                    window['has_webcam'].update(visible = True)
-                    window['num_usb_ports_text'].update(visible = True)
-                    window['num_usb_ports'].update(visible = True)
-                    window['adapter_watts_text'].update(visible = True)
-                    window['adapter_watts'].update(visible = True)
-                    window['video_ports_text'].update(visible = True)
-                    for port in VIDEO_PORT_OPTIONS:
-                        window[port].update(visible = True)
-                    window['final_os_text'].update(visible = True)
-                    window['final_os'].update(visible = True)
-                    step += 1
-                except:
-                    window['status'].update(f"No record with CRID {cr} in Salesforce, please double check and reenter")
-            elif event == "NEXT" and step == 1:
-                for field in MANUAL_FIELDS:
-                    if field == "CRID":
-                        pass
-                    elif field == "video_ports":
-                        self.video_ports = []
-                        for port in VIDEO_PORT_OPTIONS:
-                            if values[port]:
-                                self.video_ports.append(port)
-                    elif field == "final_os":
-                        if values[field] != "(leave as empty)":
-                            setattr(self, field, values[field])
-                    else:
-                        if values[field] != "":
-                            setattr(self, field, values[field])
-
-                step += 1
-                window['prompt'].update("====AUTO DATA COLLECTION====")
-                window['has_webcam_text'].update(visible = False)
-                window['has_webcam'].update(visible = False)
-                window['num_usb_ports_text'].update(visible = False)
-                window['num_usb_ports'].update(visible = False)
-                window['adapter_watts_text'].update(visible = False)
-                window['adapter_watts'].update(visible = False)
-                window['video_ports_text'].update(visible = False)
-                for port in VIDEO_PORT_OPTIONS:
-                    window[port].update(visible = False)
-                window['final_os_text'].update(visible = False)
-                window['final_os'].update(visible = False)
-
+        self.sf = None
+        if self.authenticate():
+            # run the command line version
+            if self._args.cml:
+                self.data_input()
                 self.data_collection()
-                if len(self._errors):
-                    window['status'].update(f"Error has occured on {len(self._errors)} field(s), please report terminal output to manager")
-                window["prompt_success"].update(visible = True)
-                window["prompt_failure"].update(visible = True)
-                window["prompt_next"].update(visible = True)
-                for field in AUTO_FIELDS:
-                    if getattr(self, field) != None:
-                        window[field+'_text'].update(visible = True)
-                        window[field].update(visible = True)
-                        window[field].update(getattr(self, field))
-                    else:
-                        window[field+'_text_failed'].update(visible = True)
-            elif event == "NEXT" and step == 2:
-                window['status'].update("")
-                window["prompt_success"].update(visible = False)
-                window["prompt_failure"].update(visible = False)
-                window["prompt_next"].update(visible = False)
-                for field in AUTO_FIELDS:
-                    window[field+'_text'].update(visible = False)
-                    window[field].update(visible = False)
-                    window[field+'_text_failed'].update(visible = False)
+                self.data_review()
+                self.data_upload()
+            else: # run the GUI version
+                self.start_GUI()
+        else:
+            sys.exit(1)
 
-                window["upload_waiting"].update(visible = True)
-                record = self._convert_to_record()
-                try:
-                    self.sf.Equipment__c.update(self.eid, record)
-                    window["upload_waiting"].update(visible = False)
-                    window["upload_success"].update(visible = True)
-                except:
-                    window['status'].update(f"Unexpected error, likely that record with CRID {self.CRID} is recently deleted from Salesforce")
-                    window["upload_waiting"].update(visible = False)
-                    window["upload_failure"].update(visible = True)
-                window["NEXT"].update(visible = False)
+    ########
+    # This function checks if Salesforce credentials are stored in the environment, and attempts to connect to Salesforce if so
+    ########
+    def authenticate(self):
+        # check that username, password, and security tokens all exist as environment variables 
+        missing = []
+        if not os.getenv("SF_BENCH_USERNAME"):
+            missing.append("SF_BENCH_USERNAME")
+        if not os.getenv("SF_BENCH_PASSWORD"):
+            missing.append("SF_BENCH_PASSWORD")
+        if not os.getenv("SF_BENCH_TOKEN"):
+            missing.append("SF_BENCH_TOKEN")
+        if missing:
+            print(f"\033[91mMissing the following environment variables for Salesforce credentials: {missing}\033[00m")
+            print("Please see instructions in https://github.com/CMU-IS-Computer-Reach/hardware-info-script/blob/main/README.md")
+            return False
+
+        try:
+            if self._args.test: # use Sandbox connection for test
+                self.sf = Salesforce(
+                    username = os.getenv("SF_BENCH_USERNAME"), 
+                    password = os.getenv("SF_BENCH_PASSWORD"), 
+                    security_token = os.getenv("SF_BENCH_TOKEN"),
+                    client_id='Hardware Info Script (test)',
+                    domain='test',
+                )
+            else: # production environment
+                self.sf = Salesforce(
+                    username = os.getenv("SF_BENCH_USERNAME"), 
+                    password = os.getenv("SF_BENCH_PASSWORD"), 
+                    security_token = os.getenv("SF_BENCH_TOKEN"),
+                    client_id='Hardware Info Script',
+                )
+            return True
+        except Exception as e:
+            print(f"\033[91mError occured when trying to connect to Salesforce: {e.message}\033[00m")
+            print("Please double check your environment variables SF_BENCH_USERNAME, SF_BENCH_PASSWORD, SF_BENCH_TOKEN, to make sure the correct Salesforce credential is stored; note that security token is automatically updated every time password is changed.")
+            return False
 
     ########
     # This function handles the section where users are asked to manually input data for all fields listed in self.manual_fields
@@ -656,7 +549,7 @@ class EquipmentInfo():
 
         print("  Below are a list of all mounted file systems and their size:")
         try:
-            output = subprocess.check_output("lsblk -o NAME,SIZE,TYPE,MOUNTPOINT | grep 'name|sda' -i -E",
+            output = subprocess.check_output("lsblk -d -o NAME,SIZE,TYPE,MOUNTPOINT | grep 'name|sda|sdb|nvme' -i -E",
                 shell = True,
                 text = True,
                 stderr = subprocess.STDOUT)
@@ -718,20 +611,240 @@ class EquipmentInfo():
             print("\033[92mNo error occured; all commands returned successfully\033[00m")
         print()
 
-def main():
-    valid = True
-    if not os.getenv("SF_BENCH_USERNAME"):
-        print(f"\033[91mPlease make sure environment variable SF_BENCH_USERNAME is set\033[00m")
-        valid = False
-    if not os.getenv("SF_BENCH_PASSWORD"):
-        print(f"\033[91mPlease make sure environment variable SF_BENCH_PASSWORD is set\033[00m")
-        valid = False
-    if not os.getenv("SF_BENCH_TOKEN"):
-        print(f"\033[91mPlease make sure environment variable SF_BENCH_TOKEN is set\033[00m")
-        valid = False
-    if not valid:
-        sys.exit(1)
+    ########
+    # This function runs a simple GUI, implemented with PySimpleGUI, that is (mostly) doing the same thing as the script above
+    #
+    # NOTE: The GUI is mostly hardcoded and not easily extendable at the moment. It is more of a proof of concept as opposed to a fully developed GUI,
+    #       since there is NO validation of user inputs, nor can users modify fields like they could in the command line version
+    #       To add a new field, you should manually add the new boxes into the layout, and manually turn their display on and off at the correct step
+    ########
+    def start_GUI(self):
+        step = 0
 
+        # color theme of the GUI
+        sg.theme('LightGrey1')
+        font_small = ("Arial", 12)
+        font = ("Arial", 14)
+        font_bold = ("Arial Bold", 14)
+
+        # make the checkboxes for all video ports
+        video_ports = [sg.pin(sg.Checkbox(port, key=port, font=font_small, size=(15,1), visible=False)) for port in VIDEO_PORT_OPTIONS]
+        video_ports_boxes = []
+        for i in range(0, len(VIDEO_PORT_OPTIONS), 3):
+            video_ports_boxes.append([video_ports[i], video_ports[i+1], video_ports[i+2]])
+
+        # make the select box for final OS
+        final_os_boxes = [
+            sg.pin(sg.Text("Final OS:", key="final_os_text", size=(15,1), font=font_bold, visible=False)),
+            sg.Combo(["(leave as empty)"] + FINAL_OS_OPTIONS, default_value="(leave as empty)", key="final_os", font=font, visible=False)
+        ]
+
+        # make the texts for storage size display
+        storage_boxes = [
+            [sg.pin(sg.Text("Storage (GB):", key="storage_text", size=(15,1), font=font_bold, visible=False)), sg.Input(key="storage", size=(8,1), font=font, visible=False)],
+            [sg.pin(sg.Text("(Below are a list of all mounted file systems and their size:)", key="storage_prompt", font=font_small, visible=False))]
+        ]
+        try:
+            output = subprocess.check_output("lsblk -d -o NAME,SIZE,TYPE,MOUNTPOINT | grep 'name|sda|sdb|nvme' -i -E",
+                shell = True,
+                text = True,
+                stderr = subprocess.STDOUT)
+        except subprocess.CalledProcessError as e:
+            pass
+        else:
+            rows = []
+            heading = []
+            for i, line in enumerate(output.split("\n")):
+                if not line:
+                    continue
+                elif i == 0:
+                    heading = line.split()
+                else:
+                    line = line.split()
+                    rows.append(line)
+        finally:
+            storage_boxes.append([sg.pin(sg.Table(
+                values=rows, 
+                headings=heading,
+                key="storage_table",
+                visible=False,
+            ))])
+
+        auto_fields_boxes = [[
+            sg.pin(sg.Text(f"{field}:", key=field+"_text", size=(15,1), font=font_bold, visible=False)),
+            sg.pin(sg.Text("", key=field, size=(45,1), font=font_small, visible=False))
+        ] for field in self.auto_fields]
+        
+        window = sg.Window(title="Hardware Info Script", margins=(20, 20), layout=[
+            # status bar
+            [sg.StatusBar("(Error messages will be displayed in this bar)", key="status", size=(30,1), font=font_small, text_color="Yellow", background_color="grey")],
+            [sg.Text("")],
+
+            # CRID display
+            [sg.pin(sg.Text("CRID: ", key="CRID_text", size=(5,1), font=font_bold)), sg.Input(key="CRID", size=(15,1), font=font)],
+            [sg.pin(sg.Text("", key="CRID_display", size=(20,1), font=font_bold, visible=False))],
+
+            # section prompt
+            [sg.Text("", key="prompt_space")],
+            [sg.pin(sg.Text("", key="prompt", size=(60,1), text_color="Blue", font=font))],
+            
+            # manual data entry
+            [sg.pin(sg.Text("Webcam exists?:", key="has_webcam_text", size=(15,1), font=font_bold, visible=False)), sg.Checkbox("", key="has_webcam", visible=False)],
+            [sg.pin(sg.Text("# USB ports:", key="num_usb_ports_text", size=(15,1), font=font_bold, visible=False)), sg.Input(key="num_usb_ports", size=(8,1), font=font, visible=False)],
+            [sg.pin(sg.Text("Adapter watts:", key="adapter_watts_text", size=(15,1), font=font_bold, visible=False)), sg.Input(key="adapter_watts", size=(8,1), font=font, visible=False)],
+            [sg.pin(sg.Text("Video ports:", key="video_ports_text", size=(15,1), font=font_bold, visible=False))],
+            video_ports_boxes,
+            final_os_boxes,
+            storage_boxes,
+            
+            # automatic data collection
+            [sg.pin(sg.Text("Below shows values of all automatically collected fields:", key="prompt_auto_data", size=(60,1), font=font, visible=False))],
+            auto_fields_boxes,
+
+            # prompts for data upload
+            [sg.pin(sg.Text("", key="prompt_space_2", size=(20,1), visible=False))],
+            [sg.pin(sg.Text("Click NEXT to upload data to Salesforce (may take a few seconds to load!)", key="prompt_upload", size=(60,1), font=font, visible=False))],
+            [sg.pin(sg.Text("Data uploaded successfully!", key="prompt_upload_success", size=(60,1), font=font, visible=False))],
+            [sg.pin(sg.Text("Data upload FAILED.", key="prompt_upload_failure", size=(60,1), font=font, visible=False))],
+            
+            # NEXT and EXIT buttons
+            [sg.Button("NEXT", font=font_small, size=(6,1)), sg.Button("EXIT", font=font_small, size=(6,1))],
+        ], size=(700, 700))
+
+        while True:
+            event, values = window.read()
+            if event in (None, 'EXIT'):
+                break
+            # page 2: manual data entry
+            if event == "NEXT" and step == 0:
+                window['status'].update("")
+                cr = values['CRID']
+                try:
+                    self.eid = self.sf.Equipment__c.get_by_custom_id(ALL_FIELDS_API_NAMES["CRID"], cr)['Id']
+                    self.CRID = cr
+                    # display CRID
+                    window['CRID_text'].update(visible = False)
+                    window['CRID'].update(visible = False)
+                    window['CRID_display'].update(f"CRID: {self.CRID}")
+                    window['CRID_display'].update(visible = True)
+
+                    # display section prompt
+                    window['prompt_space'].update(visible = True)
+                    window['prompt'].update("====STEP 1: MANUAL DATA ENTRY====")
+
+                    # display manual input fields
+                    # has webcam
+                    window['has_webcam_text'].update(visible = True)
+                    window['has_webcam'].update(visible = True)
+                    
+                    # number of usb ports
+                    window['num_usb_ports_text'].update(visible = True)
+                    window['num_usb_ports'].update(visible = True)
+
+                    # adapter watts
+                    window['adapter_watts_text'].update(visible = True)
+                    window['adapter_watts'].update(visible = True)
+                    
+                    # video ports
+                    window['video_ports_text'].update(visible = True)
+                    for port in VIDEO_PORT_OPTIONS:
+                        window[port].update(visible = True)
+
+                    # final OS
+                    window['final_os_text'].update(visible = True)
+                    window['final_os'].update(visible = True)
+
+                    # storage
+                    window['storage_text'].update(visible = True)
+                    window['storage'].update(visible = True)
+                    window['storage_prompt'].update(visible = True)
+                    window['storage_table'].update(visible = True)
+
+                    step += 1
+                except:
+                    window['status'].update(f"No record with CRID {cr} in Salesforce, please double check and reenter")
+            # page 3: auto data collection
+            elif event == "NEXT" and step == 1:
+                # save user inputs
+                for field in self.manual_fields:
+                    if field == "CRID":
+                        pass
+                    elif field == "video_ports":
+                        self.video_ports = []
+                        for port in VIDEO_PORT_OPTIONS:
+                            if values[port]:
+                                self.video_ports.append(port)
+                    elif field == "final_os":
+                        if values[field] != "(leave as empty)":
+                            setattr(self, field, values[field])
+                    else:
+                        if values[field] != "":
+                            setattr(self, field, values[field])
+                step += 1
+
+                # turn off display for previous input fields first
+                window['has_webcam_text'].update(visible = False)
+                window['has_webcam'].update(visible = False)
+                window['num_usb_ports_text'].update(visible = False)
+                window['num_usb_ports'].update(visible = False)
+                window['adapter_watts_text'].update(visible = False)
+                window['adapter_watts'].update(visible = False)
+                window['video_ports_text'].update(visible = False)
+                for port in VIDEO_PORT_OPTIONS:
+                    window[port].update(visible = False)
+                window['final_os_text'].update(visible = False)
+                window['final_os'].update(visible = False)
+                window['storage_text'].update(visible = False)
+                window['storage'].update(visible = False)
+                window['storage_prompt'].update(visible = False)
+                window['storage_table'].update(visible = False)
+
+                # then turn on display for auto collected data
+                window['prompt'].update("====STEP 2: AUTO DATA COLLECTION====")
+
+                # run data collection and report errors (if any)
+                self.data_collection()
+                if len(self._errors):
+                    window['status'].update(f"Error has occured on {len(self._errors)} field(s), please report terminal output to manager")
+                
+                window["prompt_auto_data"].update(visible = True)
+                window["prompt_space_2"].update(visible = True)
+                window["prompt_upload"].update(visible = True)
+                for field in self.auto_fields:
+                    window[field+'_text'].update(visible = True)
+                    window[field].update(visible = True)
+                    if getattr(self, field) != None:
+                        window[field].update(getattr(self, field))
+                    else:
+                        window[field].update("(empty)")
+            # page 4: display if data upload is successful
+            elif event == "NEXT" and step == 2:
+                window['status'].update("")
+
+                # turn off display for the previous page first
+                window["prompt_auto_data"].update(visible = False)
+                window["prompt_space_2"].update(visible = False)
+                window["prompt_upload"].update(visible = False)
+                for field in self.auto_fields:
+                    window[field+'_text'].update(visible = False)
+                    window[field].update(visible = False)
+
+                # then turn on display for the data upload section
+                window['prompt'].update("====STEP 3: DATA UPLOAD====")
+
+                # attempt to upload data and display the result
+                record = self._convert_to_record()
+                try:
+                    self.sf.Equipment__c.update(self.eid, record)
+                    window["prompt_upload_success"].update(visible = True)
+                except:
+                    window['status'].update(f"Unexpected error, likely that record with CRID {self.CRID} is recently deleted from Salesforce")
+                    window["prompt_upload_failure"].update(visible = True)
+
+                # already on the last page, no more NEXT button
+                window["NEXT"].update(visible = False)
+
+def main():
     info = EquipmentInfo()
 
 if __name__ == "__main__":
