@@ -30,6 +30,7 @@ Following fields are automatically collected:
 """
 
 # Salesforce API name for all the fields to be uploaded
+# NOTE: If adding a new field, must include its API name here (as shown in Salesforce object schema)
 ALL_FIELDS_API_NAMES = {
     "CRID":                 "Computer_Reach_ID__c",
     "has_webcam":           "Webcam_present__c",
@@ -48,14 +49,10 @@ ALL_FIELDS_API_NAMES = {
     "has_touchscreen":      "TouchScreen_Works__c",
 }
 
-# Fields that are asked to be manually input
-MANUAL_FIELDS = ["CRID", "has_webcam", "video_ports", "num_usb_ports", "adapter_watts", "final_os"]
 # Configurations for some manual fields for convenience
 FINAL_OS_OPTIONS = ["20.04_Xubuntu_Linux"] # Salesforce API Name of all final OS options
 VIDEO_PORT_OPTIONS = ["VGA", "DVI", "HDMI", "Mini-HDMI", "Display Port", "Mini-Display"] # Salesforce API Name of all video ports options
 
-# Fields that will be automatically collected
-AUTO_FIELDS = ["model_name", "RAM", "storage", "screen_size", "battery_health", "has_ethernet", "has_wifi", "has_optical_drive", "has_touchscreen"]
 # Linux commands used to automatically collect a field
 AUTO_FIELDS_LINUX_COMMANDS = {
     "model_name":           ["cat /proc/cpuinfo", "grep 'model name'"],
@@ -72,7 +69,9 @@ AUTO_FIELDS_LINUX_COMMANDS = {
 
 class EquipmentInfo():
     def __init__(self):                  # description                     # type
-        # manually entered fields
+        # manually input fields
+        # NOTE: If adding a new manual field, MUST add a new class variable (as shown below) AND add the new variable name as is in self.manual_fields
+        #       Also needs to update ALL_FIELDS_API_NAMES above correspondingly
         self.CRID = None                 # CRID                              str
         self.has_webcam = False          # Webcam (exists or not)            bool
         self.video_ports = []            # Video ports                       list(str)
@@ -81,38 +80,43 @@ class EquipmentInfo():
         self.final_os = None             # final OS                          str
         self.storage = None              # Storage size (GB)                 number
         
+        self.manual_fields = [
+            "CRID", 
+            "has_webcam", 
+            "video_ports", 
+            "num_usb_ports", 
+            "adapter_watts", 
+            "final_os", 
+            "storage"
+        ]
+        
         # automatically collected fields
+        # NOTE: If adding a new auto field, MUST add a new class variable (as shown below) AND add the new variable name as is in self.auto_fields
+        #       Furthermore, add the corresponding Linux commands to be run in AUTO_FIELDS_LINUX_COMMANDS above
         self.model_name = None           # CPU model                         str
         self.RAM = None                  # RAM size (GB)                     int
         self.screen_size = None          # Screen size (inch)                int
-        self.battery_health = None       # Battery health (%)                str (a float followed by %)
+        self.battery_health = None       # Battery health (%)                number
         self.has_ethernet = False        # Ethernet adapter (exists or not)  bool
         self.has_wifi = False            # Wifi card (exists or not)         bool
         self.has_optical_drive = False   # Optical drive (exists or not)     bool
         self.has_touchscreen = False     # Touchscreen (exists or not)       bool
-
-        self.manual_fields = [
-            self.CRID, 
-            self.has_webcam, 
-            self.video_ports, 
-            self.num_usb_ports, 
-            self.adapter_watts, 
-            self.final_os, 
-            self.storage
-        ]
         self.auto_fields = [
-            self.model_name,
-            self.RAM,
-            self.screen_size,
-            self.battery_health,
-            self.has_ethernet,
-            self.has_wifi,
-            self.has_optical_drive,
-            self.has_touchscreen
+            "model_name",
+            "RAM",
+            "screen_size",
+            "battery_health",
+            "has_ethernet",
+            "has_wifi",
+            "has_optical_drive",
+            "has_touchscreen"
         ]
 
-        self.eid = None                  # Salesforce id
-        self._errors = dict()            # field -> errors during parsing    str -> str
+        self._errors = dict()            # Stores all the errors that occur when running Linux commands for the automatically collected fields
+                                         # Data type: a dictionary mapping from field name (str) to error message (str)
+
+        # Salesforce internal id
+        self.eid = None                  
 
         # command line arguments
         parser = argparse.ArgumentParser(description = description)
@@ -121,7 +125,7 @@ class EquipmentInfo():
         self._args = parser.parse_args()
 
         # Salesforce authentication
-        if self._args.test:
+        if self._args.test: # use Sandbox connection for test
             self.sf = Salesforce(
                 username = os.getenv("SF_BENCH_USERNAME"), 
                 password = os.getenv("SF_BENCH_PASSWORD"), 
@@ -129,7 +133,7 @@ class EquipmentInfo():
                 client_id='Hardware Info Script (test)',
                 domain='test',
             )
-        else:
+        else: # production environment
             self.sf = Salesforce(
                 username = os.getenv("SF_BENCH_USERNAME"), 
                 password = os.getenv("SF_BENCH_PASSWORD"), 
@@ -137,11 +141,13 @@ class EquipmentInfo():
                 client_id='Hardware Info Script',
             )
 
-        if self._args.script:
+        # run the command line version
+        if self._args.cml:
             self.data_input()
             self.data_collection()
+            self.data_review()
             self.data_upload()
-        else:
+        else: # run the GUI version
             self.start_GUI()
     
     def start_GUI(self):
@@ -277,8 +283,14 @@ class EquipmentInfo():
                     window["upload_waiting"].update(visible = False)
                     window["upload_failure"].update(visible = True)
                 window["NEXT"].update(visible = False)
-                
 
+    ########
+    # This function handles the section where users are asked to manually input data for all fields listed in self.manual_fields
+    #
+    # NOTE: If a new field is to be added, MUST add code to handle data input and validation for that field as a new class function
+    #       Further more, if the new field is called xxx, the corresponding handling function MUST be named _xxx_fn
+    #       Scroll down for functions under the comment "data input handling functions for manual fields" as a reference
+    ########
     def data_input(self):
         print()
         print("\033[104m***Manual Data Entry Section***\033[00m")
@@ -286,9 +298,9 @@ class EquipmentInfo():
         cnt = len(self.manual_fields)
         i = 1
 
-        # CRID
+        # input CRID (required)
         while True:
-            cr = input(f" ({i:02d}/{cnt}) [REQUIRED] Enter CRID: ")
+            cr = input(f" ({i:02d}/{cnt:02d}) [REQUIRED] Enter CRID: ")
             if not cr:
                 print("\033[91m  CRID is required\033[00m")
             else:
@@ -300,94 +312,24 @@ class EquipmentInfo():
                     print(f"\033[91m  There is no record with CRID {cr} in Salesforce, please double check and reenter\033[00m")
                     print("\033[93m  (if you are trying to create a new equipment record, please add it from Salesforce UI first)\033[00m")
         i += 1
-        
-        # Webcam
-        while True:
-            webcam = input(f" ({i:02d}/{cnt}) Webcam presents? [y/n]: ").lower()
-            if webcam == "y":
-                self.has_webcam = True
-                break
-            elif webcam == "n" or webcam == "":
-                self.has_webcam = False
-                break
-            else:
-                print("\033[91m  Please enter a valid option [y/n], or ENTER to skip\033[00m")
-        i += 1
 
-        # Video ports
-        print(f" ({i:02d}/{cnt})  Choose available video ports:")
-        for port in VIDEO_PORT_OPTIONS:
-            while True:
-                p = input(f"  - {port} port presents? [y/n]: ").lower()
-                if p == "y":
-                    self.video_ports.append(port)
-                    break
-                elif p == "n" or p == "":
-                    break
-                else:
-                    print("\033[91m  Please enter a valid option [y/n], or ENTER to skip\033[00m")
-        i += 1
-
-        # Number of USB ports
-        while True:
-            usb = input(f" ({i:02d}/{cnt}) Enter # USB ports: ")
-            if not usb:
-                break
+        # input the remaining manual fields
+        # functions handling taking input and validating it for each field are further below
+        for field in self.manual_fields[1:]:
             try:
-                usb = int(usb)
-                if (usb < 0 or usb > 99):
-                    raise ValueError
-                self.num_usb_ports = usb
-                break
-            except ValueError:
-                print("\033[91m  Please enter a valid integer, or ENTER to skip\033[00m")
-        i += 1
-
-        # Adapter watts
-        watts = input(f" ({i:02d}/{cnt}) Enter adpater watts: ")
-        if watts:
-            self.adapter_watts = watts
-        i += 1
-
-        # Final OS
-        while True:
-            choices = ""
-            for j, opt in enumerate(FINAL_OS_OPTIONS):
-                choices += "  [{}] {}\n".format(j+1, opt)
-            os = input(f" ({i:02d}/{cnt}) Choose an option for final OS, or ENTER to skip:\n{choices} *choice: ")
-            if not os:
-                break
-            try:
-                self.final_os = FINAL_OS_OPTIONS[int(os)-1]
-                break
+                getattr(self, f"_{field}_fn")(i)
             except:
-                print("\033[91m  Please enter a valid integer option, or ENTER to skip\033[00m")
-    
-        # Storage size
-        print(f" ({i:02d}/{cnt}) Enter storage size (GB):")
-        print(" Below are a list of all mounted file systems and their size:")
-        try:
-            output = subprocess.check_output("lsblk -o NAME,SIZE,TYPE,MOUNTPOINT | grep 'name|sda' -i -E",
-                shell = True,
-                text = True,
-                stderr = subprocess.STDOUT)
-        except subprocess.CalledProcessError as e:
-            print(f"\033[91m  (Unexpected error when running Linux command, no available information can be provided at this time)\033[00m")
-        else:
-            print(output)
-            while True:
-                storage = input(f" *total storage size (GB): ")
-                if not storage:
-                    break
-                try:
-                    storage = float(storage)
-                    self.storage = storage
-                    break
-                except ValueError:
-                    print("\033[91m  Please enter a valid number, or ENTER to skip\033[00m")
+                print(f"\033[91m  Unspecified new field {field}; please contact administrator to update the script\033[00m")
+            i += 1
 
         print()
 
+    ########
+    # This function handles the section where all fields listed in self.auto_fields are collected automatically by running Linux commands
+    #
+    # NOTE: If a new field is to be added, MUST add the corresponding Linux command to AUTO_FIELDS_LINUX_COMMANDS
+    #       Each section in this function handles a single field; refer to their structure if you are adding a new field
+    ########
     def data_collection(self):
         print("\033[104m***Auto Data Collection Section***\033[00m")
 
@@ -448,7 +390,7 @@ class EquipmentInfo():
         else:
             try:
                 r = re.match(r"([\d\.]*)%", output)
-                self.battery_health = str(round(float(r.group(1)), 2)) + "%"
+                self.battery_health = round(float(r.group(1)), 2)
             except Exception as e:
                 self._errors["battery health"] = "regex matching error (unexpected output format from `upower`)"
         
@@ -494,33 +436,109 @@ class EquipmentInfo():
 
         self._display_errors()
 
+    ########
+    # This function handles the section where users can review the current data and modify any fields if necessary
+    #
+    # NOTE: If a new field is to be added, there are several cases:
+    #       - (a) If it's a manual field, you should have already implemented the corresponding input handling function, as directed in the comments for data_input() above
+    #             then section (a) below already handles input, and no additional code needs to be added
+    #       - (b) If it's an auto field that takes on a boolean value, you MUST name it has_xxx, 
+    #             then section (b) below already handles input, and no additional code needs to be added
+    #       - (c) If it's an auto field that takes on other types of value, you MUST implement the code for taking input and validating it in this function
+    #             see section (c) below as a reference
+    #       - (d) If it's an auto field that you do not want to be ever manually modified, add it to section (d) below, which currenly handles model_name and RAM
+    ########
     def data_review(self):
         print("\033[104m***Data Review Section***\033[00m")
         all_fields = self.manual_fields + self.auto_fields
-        for idx, field in enumerate(all_fields):
-            if field != None:
-                print(f" [{idx+1}] {field.__name__:<20}: {field}")
-            else:
-                print(f" - {field.__name__:<20}: (empty)")
 
+        updated = True
         while True:
-            choice = input(f" Enter integet option if you want to modify any field, or Y to proceed to data upload:")
+            # re-display the current data if any modifications has been made
+            if updated:
+                print("\nData:")
+                for idx, field in enumerate(all_fields):
+                    if idx == 0:
+                        continue
+                    val = getattr(self, field)
+                    if val != None:
+                        print(f" [{idx:>2}] {field:<20}: {val}")
+                    else:
+                        print(f" [{idx:>2}] {field:<20}: (empty)")
+
+            # allow user to choose a field they want to modify
+            choice = input(f" *Enter integet option if you want to modify any field, or Y to proceed to data upload:").lower()
             if not choice:
                 print("\033[91m  Please enter a valid integer option, or Y to proceed\033[00m")
-            try:
-                field = all_fields[int(os)-1]
-                # TODO
+                updated = False
+            elif choice == "y":
+                print()
                 break
-            except:
-                print("\033[91m  Please enter a valid integer option, or ENTER to skip\033[00m")
-        
-        
+            else:
+                try:
+                    choice = int(choice)
+                    if choice < 1:
+                        raise ValueError
+                    field = all_fields[choice]
+                except:
+                    print("\033[91m  Please enter a valid integer option, or ENTER to skip\033[00m")
+                    updated = False
+                else:
+                    # (a) manual fields: call the corresponding input handling function, the same as the one used in data input section
+                    if field in self.manual_fields:
+                        print()
+                        getattr(self, f"_{field}_fn")()
+                        updated = True
+                    # (b) automatic fields that're called "has_xxx": input has to be [y/n], mapped to True of False
+                    elif field.startswith("has"):
+                        print()
+                        while True:
+                            ans = input(f" - Enter new value for {field} [y/n]: ").lower()
+                            if ans == "y":
+                                setattr(self, field, True)
+                                break
+                            elif ans == "n" or ans == "":
+                                setattr(self, field, False)
+                                break
+                            else:
+                                print("\033[91m  Please enter a valid option [y/n], or ENTER to skip\033[00m")
+                        updated = True
+                    # (c) automatic fields that are floats
+                    elif field == "screen_size" or field == "battery_health":
+                        print()
+                        while True:
+                            ans = input(f" - Enter new value for {field} (a number): ").lower()
+                            try:
+                                ans = float(ans)
+                                if ans > 100:
+                                    raise ValueError
+                                setattr(self, field, ans)
+                                break
+                            except:
+                                print("\033[91m  Please enter a valid number within 100, or ENTER to skip\033[00m")
+                        updated = True
+                    # (d) automatic fields that have no good reason to be modified
+                    elif field == "model_name" or field == "RAM":
+                        print(f"\033[91m  ***{field} should almost never be manually altered; if must, modify it in Salesforce directly\033[00m")
+                        updated = False
+                    # other unspecified new field
+                    else:
+                        print(f"\033[91m  Unhandled new field {field}; please modify it in Salesforce directly and contact administrator to update the script\033[00m")
+                        updated = False
+
+    ########
+    # This function handles the section where users can choose whether or not they want to upload the data to Salesforce
+    #
+    # NOTE: If a new field is to be added, there are no changes to be done here, 
+    #       BUT you may need to modify _convert_to_record() for some types of fields - scroll to that function for more information
+    ########
     def data_upload(self):
         print("\033[104m***Data Upload Section***\033[00m")
         print("\033[93m Below fields will be uploaded to Saleforce, any fields not shown will be empty:\033[00m")
         for field in self.manual_fields + self.auto_fields:
-            if field != None:
-                print(f"  {field.__name__:<20}: {field}")
+            val = getattr(self, field)
+            if val != None:
+                print(f"  {field:<20}: {val}")
         print()
 
         while True:
@@ -541,15 +559,137 @@ class EquipmentInfo():
             else:
                 print("\033[91m  Please enter a valid option [y/n]\033[00m")
 
-    def _display_errors(self):
-        if len(self._errors):
-            print("\033[91mBelow error occured when running Linux commands:\033[00m")
-            for field, err in self._errors.items():
-                print(f"\033[91m - {field}: {err}\033[00m")
-        else:
-            print("\033[92mNo error occured; all commands returned successfully\033[00m")
-        print()
+    ########
+    # This section contains all the functions that handles data input and validation for manual fields
+    # NOTE: If a field is named xxx, the corresponding function MUST be named _xxx_fn
+    # NOTE: Each function also takes in an optional integer i - this is purely for display purpose!!!
+    #       (data_input() calls these functions with an integer i, so as to show how many questions there are left to be answer,
+    #        but data_review() calls these functions without the integer, since there's no question number to display)
+    ########
 
+    def _has_webcam_fn(self, i=None):
+        while True:
+            if i:
+                webcam = input(f" ({i:02d}/{len(self.manual_fields):02d}) Webcam presents? [y/n]: ").lower()
+            else:
+                webcam = input(f" - Enter new value for has_webcam [y/n]: ").lower()
+
+            if webcam == "y":
+                self.has_webcam = True
+                break
+            elif webcam == "n" or webcam == "":
+                self.has_webcam = False
+                break
+            else:
+                print("\033[91m  Please enter a valid option [y/n], or ENTER to skip\033[00m")
+
+    def _video_ports_fn(self, i=None):
+        if i:
+            print(f" ({i:02d}/{len(self.manual_fields):02d}) Choose available video ports:")
+        else:
+            print(f" - Choose available video ports:")
+
+        for port in VIDEO_PORT_OPTIONS:
+            while True:
+                p = input(f"  - {port} port presents? [y/n]: ").lower()
+                if p == "y":
+                    self.video_ports.append(port)
+                    break
+                elif p == "n" or p == "":
+                    break
+                else:
+                    print("\033[91m  Please enter a valid option [y/n], or ENTER to skip\033[00m")
+
+    def _num_usb_ports_fn(self, i=None):
+        while True:
+            if i:
+                usb = input(f" ({i:02d}/{len(self.manual_fields):02d}) Enter # USB ports: ")
+            else:
+                usb = input(f" - Enter new value for # USB ports: ")
+
+            if not usb:
+                break
+            try:
+                usb = int(usb)
+                if (usb < 0 or usb > 99):
+                    raise ValueError
+                self.num_usb_ports = usb
+                break
+            except ValueError:
+                print("\033[91m  Please enter a valid integer, or ENTER to skip\033[00m")
+
+    def _adapter_watts_fn(self, i=None):
+        if i:
+            watts = input(f" ({i:02d}/{len(self.manual_fields):02d}) Enter adpater watts: ")
+        else:
+            watts = input(f" Enter new value for adpater watts: ")
+
+        if watts:
+            self.adapter_watts = watts
+        i += 1
+
+    def _final_os_fn(self, i=None):
+        while True:
+            choices = ""
+            for j, opt in enumerate(FINAL_OS_OPTIONS):
+                choices += "  [{}] {}\n".format(j+1, opt)
+            if i:
+                os = input(f" ({i:02d}/{len(self.manual_fields):02d}) Choose an option for final OS, or ENTER to skip:\n{choices} *choice: ")
+            else:
+                os = input(f" - Choose an option for final OS, or ENTER to skip:\n{choices} *choice: ")
+
+            if not os:
+                break
+            try:
+                if int(os) < 1:
+                    raise ValueError
+                self.final_os = FINAL_OS_OPTIONS[int(os)-1]
+                break
+            except:
+                print("\033[91m  Please enter a valid integer option, or ENTER to skip\033[00m")
+
+    def _storage_fn(self, i=None):
+        if i:
+            print(f" ({i:02d}/{len(self.manual_fields):02d}) Enter storage size (GB):")
+        else:
+            print(f" - Enter new value for storage size (GB):")
+
+        print("  Below are a list of all mounted file systems and their size:")
+        try:
+            output = subprocess.check_output("lsblk -o NAME,SIZE,TYPE,MOUNTPOINT | grep 'name|sda' -i -E",
+                shell = True,
+                text = True,
+                stderr = subprocess.STDOUT)
+        except subprocess.CalledProcessError as e:
+            print(f"\033[91m  (Unexpected error when running Linux command, no available information can be provided at this time)\033[00m")
+        else:
+            for line in output.split("\n"):
+                if not line:
+                    continue
+                else:
+                    print(f"  {line}")
+            while True:
+                storage = input(f" *total storage size (GB): ")
+                if not storage:
+                    break
+                try:
+                    storage = float(storage)
+                    self.storage = storage
+                    break
+                except ValueError:
+                    print("\033[91m  Please enter a valid number, or ENTER to skip\033[00m")
+
+    ########
+    # other helper functions
+    ########
+
+    ########
+    # This functions converts data into the correct JSON format accepted by the database schema in Salesforce
+    # NOTE: Most fields, such as those of boolean or number types, don't require extra convertion, because their values can be uploaded as is into Salesforce
+    #       However, some fields, such as multi-select, require the data to be a special format, hence MUST be converted in this function
+    #       For some other fields, we may also want to convert the data due to some requirements,
+    #         e.g. in this function we change battery health from just a number, to a number followed by a % sign, so that it's more readable in Salesforce
+    ########
     def _convert_to_record(self):
         record = dict()
         
@@ -558,9 +698,25 @@ class EquipmentInfo():
             if var != None:
                 if field == "video_ports": # this is a picklist (multi-select) field in Salesforce, so data should be in the format of "selection1;selection;..."
                     var = ";".join(var)
+                elif field == "battery_health": # add a % sign after the number for readability
+                    var = str(var) + "%"
                 record[ALL_FIELDS_API_NAMES[field]] = var
 
         return record
+    
+    ########
+    # This functions is for displaying errors that happen when running Linux commands for the automatically collected fields
+    # NOTE: If a new auto field is to be added, there are no changes to be done here
+    #       However, you should make sure that any new errors that may occur for the new auto field is saved to self._errors, which is a dictionary mapping field name to the error
+    ########
+    def _display_errors(self):
+        if len(self._errors):
+            print("\033[91mBelow error occured when running Linux commands:\033[00m")
+            for field, err in self._errors.items():
+                print(f"\033[91m - {field}: {err}\033[00m")
+        else:
+            print("\033[92mNo error occured; all commands returned successfully\033[00m")
+        print()
 
 def main():
     valid = True
