@@ -6,7 +6,7 @@ The script has two versions:
 2. GUI: spins up a GUI; currently only a proof-of-concept - missing some important functionalities
 
 ## Usage
-(You can also refer to this video for a walkthrough.)
+(You can also refer to [this video](https://youtu.be/SJmyxrJDqjQ) for a detailed walkthrough.)
 1. Make sure Python3 is installed: `python3 --version`
     1. If not, install with `sudo apt install python3.8`
 2. If you want to run the GUI version, make sure `tkinter` is installed: `python3 -m tkinter`
