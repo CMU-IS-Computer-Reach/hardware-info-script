@@ -644,6 +644,8 @@ class EquipmentInfo():
             [sg.pin(sg.Text("Storage (GB):", key="storage_text", size=(15,1), font=font_bold, visible=False)), sg.Input(key="storage", size=(8,1), font=font, visible=False)],
             [sg.pin(sg.Text("(Below are a list of all mounted file systems and their size:)", key="storage_prompt", font=font_small, visible=False))]
         ]
+        rows = []
+        heading = []
         try:
             output = subprocess.check_output("lsblk -d -o NAME,SIZE,TYPE,MOUNTPOINT | grep 'name|sda|sdb|nvme' -i -E",
                 shell = True,
@@ -652,8 +654,6 @@ class EquipmentInfo():
         except subprocess.CalledProcessError as e:
             pass
         else:
-            rows = []
-            heading = []
             for i, line in enumerate(output.split("\n")):
                 if not line:
                     continue
