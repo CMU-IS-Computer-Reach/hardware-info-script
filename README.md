@@ -12,7 +12,7 @@ The script has two versions:
 2. If you want to run the GUI version, make sure `tkinter` is installed: `python3 -m tkinter`
     1. If not, install with `sudo apt-get install python3-tk`
 3. Make sure the dependencies is installed (**this only needs to be run once**): `pip install -r requirements.txt`
-4. Make sure the following **environment variables** are set/up-to-date (add `export NAME=VALUE` to your `~/.bashrc` file, and then run `source .bashrc`, and then restart terminal):
+4. Make sure the following **environment variables** are set/up-to-date (add `export NAME=VALUE` to your `~/.bashrc` file, and then run `source ~/.bashrc`, and then restart terminal):
     1. `SF_BENCH_USERNAME`: Salesforce username of the account used for auditing devices
     2. `SF_BENCH_PASSWORD`: password
     3. `SF_BENCH_TOKEN`: security token ([how to find it](https://help.salesforce.com/s/articleView?id=sf.user_security_token.htm&type=5))
