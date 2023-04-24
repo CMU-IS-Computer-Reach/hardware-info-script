@@ -57,7 +57,6 @@ VIDEO_PORT_OPTIONS = ["VGA", "DVI", "HDMI", "Mini-HDMI", "Display Port", "Mini-D
 AUTO_FIELDS_LINUX_COMMANDS = {
     "model_name":           ["cat /proc/cpuinfo", "grep 'model name'"],
     "RAM":                  ["cat /proc/meminfo", "numfmt --field 2 --from-unit=Ki --to-unit=Gi", "sed 's/ kB/G/g'", "grep 'MemTotal'", "awk '{print $2}'"],
-    "storage":              ["lsblk -I 8 -d -n --output SIZE"],
     "screen_size":          ["xrandr --current", "grep ' connected'"],
     "battery_health":       ["upower -i `upower -e | grep 'BAT'`", "grep 'capacity'", "awk '{print $2}'", "grep ."],
     "has_ethernet":         ["lspci", "grep 'ethernet' -i", "grep ."],
@@ -509,7 +508,7 @@ class EquipmentInfo():
                 self.num_usb_ports = usb
                 break
             except ValueError:
-                print("\033[91m  Please enter a valid integer, or ENTER to skip\033[00m")
+                print("\033[91m  Please enter a valid integer between 0 and 99, or ENTER to skip\033[00m")
 
     def _adapter_watts_fn(self, i=None):
         if i:
@@ -589,7 +588,7 @@ class EquipmentInfo():
         for field in ALL_FIELDS_API_NAMES:
             var = getattr(self, field)
             if var != None:
-                if field == "video_ports": # this is a picklist (multi-select) field in Salesforce, so data should be in the format of "selection1;selection;..."
+                if field == "video_ports": # this is a picklist (multi-select) field in Salesforce, so data should be in the format of "selection1;selection2;..."
                     var = ";".join(var)
                 elif field == "battery_health": # add a % sign after the number for readability
                     var = str(var) + "%"
