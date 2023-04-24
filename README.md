@@ -6,7 +6,9 @@ The script has two versions:
 2. GUI: spins up a GUI; currently only a proof-of-concept - missing some important functionalities
 
 ## Usage
-(You can also refer to [this video](https://youtu.be/SJmyxrJDqjQ) for a detailed walkthrough.)
+**Usage instruction [video](https://youtu.be/SJmyxrJDqjQ)**: a more detailed walkthrough of the entire workflow, including all the prompts and errors users may see
+
+Below is a brief summary:
 1. Make sure Python3 is installed: `python3 --version`
     1. If not, install with `sudo apt install python3.8`
 2. If you want to run the GUI version, make sure `tkinter` is installed: `python3 -m tkinter`
@@ -26,6 +28,7 @@ The script has two versions:
     4. The script then displays all fields and allows you to select any field you want to modify
     5. Once done with modification, you can choose whether or not to upload the data to Salesforce
         - **REVIEW IT BEFORE PROCEEDING**
+6. To run the GUI version: `python3 <path to script.py>`
 
 ## Fields Collected
 
@@ -51,4 +54,4 @@ See `ALL_FIELDS_API_NAMES` for the Linux commands run for each field
 
 ## Maintenance 
 
-`script.py` is comprehensively documentated with instructions on how to maintain and/or extend the script to include new fields or modify existing ones. However, it is highly suggested that you refer to this video for a detailed walkthrough of the code.
+`script.py` is comprehensively documentated with instructions on how to maintain and/or extend the script to include new fields or modify existing ones. However, it is highly suggested that you refer to [this video](https://www.youtube.com/watch?v=Rg_dFDKNYLg) for a detailed walkthrough of the code.
